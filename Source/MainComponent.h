@@ -22,8 +22,15 @@ public:
     //==============================================================================
     void paint (juce::Graphics& g) override;
     void resized() override;
+    void openButtonClicked();
+    void clearButtonClicked();
 
 private:
+    juce::TextButton openButton;
+    juce::TextButton clearButton;
+    juce::AudioFormatManager formatManager;
+    juce::AudioSampleBuffer fileBuffer;
+    int position;
     //==============================================================================
     // Your private member variables go here...
 

@@ -5,20 +5,17 @@ MainComponent::MainComponent()
 {
     // Make sure you set the size of the component after
     // you add any child components.
+    addAndMakeVisible(&openButton);
+    openButton.setButtonText("Open. . .");
+    openButton.onClick = [this] { openButtonClicked();};
+    
+    addAndMakeVisible(&clearButton);
+    clearButton.setButtonText("Clear");
+    clearButton.onClick = [this] { clearButtonClicked();};
+    
     setSize (800, 600);
 
-    // Some platforms require permissions to open input channels so request that here
-    if (juce::RuntimePermissions::isRequired (juce::RuntimePermissions::recordAudio)
-        && ! juce::RuntimePermissions::isGranted (juce::RuntimePermissions::recordAudio))
-    {
-        juce::RuntimePermissions::request (juce::RuntimePermissions::recordAudio,
-                                           [&] (bool granted) { setAudioChannels (granted ? 2 : 0, 2); });
-    }
-    else
-    {
-        // Specify the number of input and output channels that we want to open
-        setAudioChannels (2, 2);
-    }
+    setAudioChannels(2, 2);
 }
 
 MainComponent::~MainComponent()
@@ -72,4 +69,31 @@ void MainComponent::resized()
     // This is called when the MainContentComponent is resized.
     // If you add any child components, this is where you should
     // update their positions.
+}
+
+void MainComponent::openButtonClicked()
+{
+    shutdownAudio();
+    juce::FileChooser chooser ("Select a .wav file", {}, "*.wav");
+    if(chooser.browseForFileToOpen())
+    {
+        auto chosenFile = chooser.getResult();
+        std::unique_ptr<juce::AudioFormatReader> reader (formatManager.createReaderFor(chosenFile));
+        if(reader.get() != nullptr) //evaluates true if the reader is created successfully
+        {
+            auto duration = (float)reader->lengthInSamples / reader->sampleRate;
+            if(duration < 5) //ensures the sample is not more than 5 seconds long
+            {
+                fileBuffer.setSize((int) reader->numChannels, (int)reader-> lengthInSamples); //sets aside a buffer of the appropriate size for the sample
+                reader->read(&fileBuffer, //'read' will load the samples into memory at the address of the buffer
+                             0, //load samples into the buffer beginning at buffer index 0
+                             (int) reader->lengthInSamples, //the number of samples to load
+                             0, //start reading the file from its sample index 0
+                             true, //read the left channel?
+                             true); //read the right channel?
+                position = 0;
+                setAudioChannels(0, (int) reader->numChannels);
+            }
+        }
+    }
 }
