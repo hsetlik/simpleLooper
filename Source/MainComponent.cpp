@@ -13,9 +13,9 @@ MainComponent::MainComponent()
     clearButton.setButtonText("Clear");
     clearButton.onClick = [this] { clearButtonClicked();};
     
-    setSize (800, 600);
+    setSize (300, 200);
 
-    setAudioChannels(2, 2);
+    formatManager.registerBasicFormats();
 }
 
 MainComponent::~MainComponent()
@@ -27,31 +27,44 @@ MainComponent::~MainComponent()
 //==============================================================================
 void MainComponent::prepareToPlay (int samplesPerBlockExpected, double sampleRate)
 {
-    // This function will be called when the audio device is started, or when
-    // its settings (i.e. sample rate, block size, etc) are changed.
-
-    // You can use this function to initialise any resources you might need,
-    // but be careful - it will be called on the audio thread, not the GUI thread.
-
-    // For more details, see the help for AudioProcessor::prepareToPlay()
+    
 }
 
 void MainComponent::getNextAudioBlock (const juce::AudioSourceChannelInfo& bufferToFill)
 {
-    // Your audio-processing code goes here!
-
-    // For more details, see the help for AudioProcessor::getNextAudioBlock()
-
-    // Right now we are not producing any data, in which case we need to clear the buffer
-    // (to prevent the output of random noise)
-    bufferToFill.clearActiveBufferRegion();
+    auto numInputChannels = fileBuffer.getNumChannels();
+    auto numOutputChannels = bufferToFill.buffer->getNumChannels();
+    
+    auto samplesRemaining = bufferToFill.numSamples; //this var allows the while loop to check whether the whole sample has been loaded
+    auto sampleOffset = bufferToFill.startSample; //sample offset var starts at the buffer's starting sample
+    while(samplesRemaining > 0)
+    {
+        auto bufferSamplesRemaining = fileBuffer.getNumSamples() - position; //decrements the remaining sample count by the number of samples loaded in the last loop
+        auto samplesThisTime = juce::jmin(samplesRemaining, bufferSamplesRemaining); //tracks how many samples are loaded in each loop
+        for(auto channel = 0; channel < numOutputChannels; ++channel) //just ensures that all channels are loaded in the same way
+        {
+            bufferToFill.buffer->copyFrom(channel,//copy data from the buffer to the channel in the 1st argument
+                                          sampleOffset, //starts writing at the first unwritten position in the output buffer
+                                          fileBuffer, //the source buffer
+                                          channel % numInputChannels, //chooses the channel of the source buffer from which to copy
+                                          position, //the source buffer is read starting here
+                                          samplesThisTime); //the number of samples to be read on this loop
+        }
+        samplesRemaining -= samplesThisTime; //updates the data for the next iteration of the loop
+        sampleOffset += samplesThisTime;
+        position += samplesThisTime;
+        
+        if(position == fileBuffer.getNumSamples()){ //causes the position to reset (i.e. loop) such that the file is again read from the beginning
+            position = 0;
+        }
+    }
 }
 
 void MainComponent::releaseResources()
 {
     // This will be called when the audio device stops, or when it is being
     // restarted due to a setting change.
-
+    fileBuffer.setSize(0, 0);
     // For more details, see the help for AudioProcessor::releaseResources()
 }
 
@@ -66,9 +79,8 @@ void MainComponent::paint (juce::Graphics& g)
 
 void MainComponent::resized()
 {
-    // This is called when the MainContentComponent is resized.
-    // If you add any child components, this is where you should
-    // update their positions.
+    openButton .setBounds (10, 10, getWidth() - 20, 20);
+    clearButton.setBounds (10, 40, getWidth() - 20, 20);
 }
 
 void MainComponent::openButtonClicked()
@@ -78,7 +90,7 @@ void MainComponent::openButtonClicked()
     if(chooser.browseForFileToOpen())
     {
         auto chosenFile = chooser.getResult();
-        std::unique_ptr<juce::AudioFormatReader> reader (formatManager.createReaderFor(chosenFile));
+        std::unique_ptr<juce::AudioFormatReader> reader (formatManager.createReaderFor(chosenFile)); //this reader object is responsible for loading data from the sample file into the fileBuffer object
         if(reader.get() != nullptr) //evaluates true if the reader is created successfully
         {
             auto duration = (float)reader->lengthInSamples / reader->sampleRate;
@@ -92,8 +104,12 @@ void MainComponent::openButtonClicked()
                              true, //read the left channel?
                              true); //read the right channel?
                 position = 0;
-                setAudioChannels(0, (int) reader->numChannels);
+                setAudioChannels(0, (int) reader->numChannels); //turns audio back on after turning it off on line 88
             }
         }
     }
+}
+
+void MainComponent::clearButtonClicked(){
+    shutdownAudio();
 }
